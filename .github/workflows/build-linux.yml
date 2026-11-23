@@ -75,6 +75,13 @@ jobs:
 
       - name: Package installer(s) for ${{ matrix.os }}
         run: npx electron-builder ${{ matrix.builder }}
+        env:
+          # Let electron-builder publish the built installers to a GitHub
+          # Release automatically (onTagOrDraft) using the auto-provided
+          # token. contents: write is granted at the top of this file.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Windows builds are not code-signed; avoid a signing step.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -93,36 +100,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: cmplx-studio-windows-latest
-          path: release
-
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: cmplx-studio-ubuntu-latest
-          path: release
-
       - name: Read version from package.json
         id: version
         run: echo "version=$(grep -o '\"version\"[^,]*' package.json | head -1 | grep -o '[0-9.]*')" >> "$GITHUB_OUTPUT"
 
-      - name: Create / update GitHub Release with assets
+      - name: Finalize GitHub Release (name + auto release notes)
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # The installer binaries (.exe/.deb/.rpm/.AppImage) are already
+          # published by the electron-builder step above (using GH_TOKEN).
+          # This job only sets the final release name and generates notes, so
+          # the same assets are not uploaded twice to the same release.
           name: CMPLX Studio ${{ steps.version.outputs.version }}
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           draft: false
           prerelease: false
-          files: |
-            release/*.exe
-            release/*.exe.blockmap
-            release/*.AppImage
-            release/*.AppImage.blockmap
-            release/*.deb
-            release/*.rpm
