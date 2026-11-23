@@ -18,12 +18,14 @@ jobs:
         include:
           - os: windows-latest
             builder: --win nsis
+            e2e: npm run test:e2e
             artifacts: |
               release/*.exe
               release/*.exe.blockmap
               release/latest.yml
           - os: ubuntu-latest
             builder: --linux AppImage deb rpm
+            e2e: npm run test:e2e:ci
             artifacts: |
               release/*.AppImage
               release/*.AppImage.blockmap
@@ -63,7 +65,7 @@ jobs:
         run: npm test
 
       - name: End-to-end tests
-        run: npm run test:e2e
+        run: ${{ matrix.e2e }}
 
       - name: Ollama integration tests (mock server)
         run: npm run test:ollama
