@@ -24,7 +24,12 @@ jobs:
               release/*.exe
               release/*.exe.blockmap
               release/latest.yml
-          - os: ubuntu-latest
+          # Pin the Linux builder to ubuntu-22.04: electron-builder's bundled
+          # fpm 1.9.3 is incompatible with the rpmbuild shipped on modern
+          # ubuntu-latest (rpm 6.x), which breaks the .rpm build with
+          # "File not found .../BUILDROOT". Ubuntu 22.04 ships rpm 4.16 whose
+          # build layout matches fpm 1.9.3.
+          - os: ubuntu-22.04
             builder: --linux AppImage deb rpm
             e2e: xvfb-run -a npm run test:e2e:ci
             ollama: xvfb-run -a npm run test:ollama:ci
