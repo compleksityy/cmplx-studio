@@ -77,15 +77,18 @@ app.whenReady().then(async () => {
   });
 
   await check('create a pty terminal and read live output', async () => {
-    const shell = process.env.COMSPEC || 'powershell.exe';
+    // Use the platform's real default shell (mirroring terminalService.ts) so
+    // this runs on both Windows and Linux CI runners.
+    const win32 = process.platform === 'win32';
+    const shell = win32 ? (process.env.COMSPEC || 'powershell.exe') : (process.env.SHELL || '/bin/bash');
+    const eol = win32 ? '\r\n' : '\n';
     const p = pty.spawn(shell, [], { cwd: sandbox, cols: 80, rows: 24 });
     const got = await new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('pty output timeout')), 15000);
       p.onData((d) => {
         if (d.includes('CMPlxTESTOK')) { clearTimeout(t); resolve(true); }
       });
-      // Windows cmd: echo marker and print current dir
-      p.write('echo CMPlxTESTOK\r\n');
+      p.write(`echo CMPlxTESTOK${eol}`);
     });
     p.kill();
     assert(got === true);
