@@ -31,6 +31,34 @@
     "synopsis": "CMPLX Studio desktop AI code editor",
     "maintainer": "CMPLX Studio Team <support@cmplx.studio>"
   },
+  "deb": {
+    "depends": [
+      "libgtk-3-0",
+      "libnotify4",
+      "libnss3",
+      "libxss1",
+      "libxtst6",
+      "xdg-utils",
+      "libasound2"
+    ]
+  },
+  "rpm": {
+    "depends": [
+      "gtk3",
+      "libnotify",
+      "nss",
+      "libXScrnSaver",
+      "libXtst",
+      "xdg-utils",
+      "at-spi2-core",
+      "libuuid"
+    ],
+    "compression": "xz",
+    "fpm": [
+      "--rpm-compression",
+      "xz"
+    ]
+  },
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true
