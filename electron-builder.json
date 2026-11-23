@@ -1,0 +1,38 @@
+{
+  "appId": "com.cmplxstudio.app",
+  "productName": "CMPLX Studio",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "node_modules/**/*",
+    "package.json"
+  ],
+  "asarUnpack": [
+    "node_modules/node-pty/**/*"
+  ],
+  "win": {
+    "target": "nsis",
+    "icon": "assets/icons/icon.ico"
+  },
+  "mac": {
+    "target": "dmg",
+    "icon": "build/icon.icns"
+  },
+  "linux": {
+    "target": [
+      "AppImage",
+      "deb",
+      "rpm"
+    ],
+    "icon": "assets/icons",
+    "category": "Development",
+    "synopsis": "CMPLX Studio desktop AI code editor",
+    "maintainer": "CMPLX Studio Team <support@cmplx.studio>"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}

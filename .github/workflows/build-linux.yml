@@ -1,0 +1,126 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            builder: --win nsis
+            artifacts: |
+              release/*.exe
+              release/*.exe.blockmap
+              release/latest.yml
+          - os: ubuntu-latest
+            builder: --linux AppImage deb rpm
+            artifacts: |
+              release/*.AppImage
+              release/*.AppImage.blockmap
+              release/*.deb
+              release/*.rpm
+              release/latest-linux.yml
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Linux packaging dependencies (deb + rpm + AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm fakeroot libarchive-tools || true
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Rebuild native module for Electron ABI (node-pty)
+        run: npm run rebuild
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Ollama integration tests (mock server)
+        run: npm run test:ollama
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package installer(s) for ${{ matrix.os }}
+        run: npx electron-builder ${{ matrix.builder }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmplx-studio-${{ matrix.os }}
+          path: ${{ matrix.artifacts }}
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cmplx-studio-windows-latest
+          path: release
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cmplx-studio-ubuntu-latest
+          path: release
+
+      - name: Read version from package.json
+        id: version
+        run: echo "version=$(grep -o '\"version\"[^,]*' package.json | head -1 | grep -o '[0-9.]*')" >> "$GITHUB_OUTPUT"
+
+      - name: Create / update GitHub Release with assets
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: CMPLX Studio ${{ steps.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/*.AppImage
+            release/*.AppImage.blockmap
+            release/*.deb
+            release/*.rpm
