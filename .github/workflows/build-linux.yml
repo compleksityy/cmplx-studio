@@ -19,6 +19,7 @@ jobs:
           - os: windows-latest
             builder: --win nsis
             e2e: npm run test:e2e
+            ollama: npm run test:ollama
             artifacts: |
               release/*.exe
               release/*.exe.blockmap
@@ -26,6 +27,7 @@ jobs:
           - os: ubuntu-latest
             builder: --linux AppImage deb rpm
             e2e: xvfb-run -a npm run test:e2e:ci
+            ollama: xvfb-run -a npm run test:ollama:ci
             artifacts: |
               release/*.AppImage
               release/*.AppImage.blockmap
@@ -74,7 +76,7 @@ jobs:
         run: ${{ matrix.e2e }}
 
       - name: Ollama integration tests (mock server)
-        run: npm run test:ollama
+        run: ${{ matrix.ollama }}
 
       - name: Build application
         run: npm run build

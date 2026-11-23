@@ -22,6 +22,7 @@
     "test:e2e": "npm run build:electron && electron scripts/verify-e2e.js",
     "test:e2e:ci": "npm run build:electron && electron --no-sandbox scripts/verify-e2e.js",
     "test:ollama": "electron scripts/verify-ollama.js",
+    "test:ollama:ci": "npm run build:electron && electron --no-sandbox scripts/verify-ollama.js",
     "test:live": "electron scripts/verify-live-ollama.js",
     "test:launcher": "npm run build:electron && electron scripts/verify-ollama-launcher.js && electron scripts/verify-launcher-lifecycle.js",
     "test:ui": "npm run build && electron scripts/verify-theme.js"
