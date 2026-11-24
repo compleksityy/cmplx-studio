@@ -1,7 +1,7 @@
 {
   "name": "cmplx-studio",
   "productName": "CMPLX Studio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CMPLX Studio - a desktop AI-powered code editor and development environment",
   "main": "dist/main/main.js",
   "scripts": {
