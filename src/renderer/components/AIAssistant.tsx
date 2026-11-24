@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useCmplx } from '../store';
 import { isOk } from '../utils';
+import { stripChangeBlock } from '../changeParse';
+import { Markdown } from './Markdown';
 import api from '../api';
 
 interface SessionInfo {
@@ -236,7 +238,13 @@ export const AIAssistant: React.FC = () => {
           <div key={m.id} className={`msg ${m.role}`}>
             <div className="msg-avatar">{m.role === 'user' ? 'U' : 'AI'}</div>
             <div className="msg-bubble">
-              <pre className="msg-content">{m.content}</pre>
+              <div className="msg-bubble-inner">
+                {m.role === 'assistant' ? (
+                  <Markdown content={stripChangeBlock(m.content)} />
+                ) : (
+                  <Markdown content={m.content} />
+                )}
+              </div>
               {m.error && <div className="msg-error">⚠ {m.error}</div>}
               {m.id === activeStreamId && <span className="streaming-caret" />}
               {m.role === 'assistant' && !m.content && isAiBusy && <span className="typing">thinking…</span>}

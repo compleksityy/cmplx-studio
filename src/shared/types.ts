@@ -25,6 +25,8 @@ export interface ChatMessage {
   // When the assistant emits a proposed file change, it is attached here.
   pendingChange?: FileChangeSet | null;
   error?: string;
+  // Auto-apply status for assistant messages that change files on disk.
+  autoApply?: { state: 'applying' | 'applied' | 'failed'; label?: string };
 }
 
 export interface OllamaModel {

@@ -69,6 +69,7 @@ interface CmplxState {
   pendingChange: FileChangeSet | null;
   acceptChange: (change: FileChangeSet) => Promise<boolean>;
   rejectChange: () => void;
+  changeStatus: 'idle' | 'applying' | 'applied' | 'failed';
 
   // sessions
   loadSession: (id: string) => Promise<void>;
@@ -110,6 +111,7 @@ export function CmplxProvider({ children }: { children: React.ReactNode }) {
   const [isAiBusy, setIsAiBusy] = useState(false);
   const [activeStreamId, setActiveStreamId] = useState<string | null>(null);
   const [pendingChange, setPendingChange] = useState<FileChangeSet | null>(null);
+  const [changeStatus, setChangeStatus] = useState<'idle' | 'applying' | 'applied' | 'failed'>('idle');
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [notices, setNotices] = useState<{ id: number; message: string; type: string }[]>([]);
 
@@ -604,6 +606,7 @@ export function CmplxProvider({ children }: { children: React.ReactNode }) {
   const startNewSession = useCallback(() => {
     setMessages([]);
     setPendingChange(null);
+    setChangeStatus('idle');
     setActiveStreamId(null);
     setIsAiBusy(false);
   }, []);
@@ -614,6 +617,7 @@ export function CmplxProvider({ children }: { children: React.ReactNode }) {
       if (isOk(res) && res.value) {
         setMessages(res.value.messages || []);
         setPendingChange(null);
+        setChangeStatus('idle');
         setActiveTabId('assistant');
       } else if (isOk(res)) {
         toast('Session not found', 'error');
@@ -636,7 +640,7 @@ export function CmplxProvider({ children }: { children: React.ReactNode }) {
     // read the tree and a handful of small open/source files
     const parts: string[] = [
       `Project root: ${ws.rootName}`,
-      `\nWhen you want to create or edit files, end your reply with a fenced code block on its own lines starting exactly with the word PROPOSED_CHANGES followed by JSON of this shape:\n\n\`\`\`json\nPROPOSED_CHANGES\n{\n  "message": "one-line summary of the change",\n  "edits": [\n    { "path": "relative/path/in/project.ts", "content": "full new file contents", "summary": "what changed here" }\n  ]\n}\n\`\`\`\n\nProvide the COMPLETE new file content for each edited file (not a diff), relative to the project root, and never invent paths outside the repository. If you only answer in prose, no file changes are made. For deletion requests, use an edit with content equal to the marker __CMPLX_DELETE_FILE__.`
+      `\nWhen you want to create or edit files, end your reply with a fenced code block on its own lines starting exactly with the word PROPOSED_CHANGES followed by JSON of this shape:\n\n\`\`\`json\nPROPOSED_CHANGES\n{\n  "message": "one-line summary of the change",\n  "edits": [\n    { "path": "relative/path/in/project.ts", "content": "full new file contents", "summary": "what changed here" }\n  ]\n}\n\`\`\`\n\nProvide the COMPLETE new file content for each edited file (not a diff), relative to the project root, and never invent paths outside the repository. Create new files directly in the project ROOT unless the user explicitly names a subdirectory or asks for a folder structure — do not invent subfolders like "test/" or "src/" on your own. If you only answer in prose, no file changes are made. For deletion requests, use an edit with content equal to the marker __CMPLX_DELETE_FILE__.`
     ];
     try {
       const dirRes = await api.readDirectory({ path: '' });
@@ -739,31 +743,44 @@ export function CmplxProvider({ children }: { children: React.ReactNode }) {
   const clearConversation = useCallback(() => {
     setMessages([]);
     setPendingChange(null);
+    setChangeStatus('idle');
   }, []);
 
-  // Parse a pending change set from the assistant's final code block.
+  // Auto-apply a change set detected in the assistant's final reply.
+  // No manual "Apply" step: when the model ends its message with a change
+  // spec, the files are written straight to disk and the chat shows a
+  // short status note under the reply.
+  const appliedChangeIds = useRef<Set<string>>(new Set());
   useEffect(() => {
-    // Look at the last assistant message for a fenced change spec.
     const last = messages[messages.length - 1];
     if (!last || last.role !== 'assistant' || isAiBusy) return;
+    if (appliedChangeIds.current.has(last.id)) return; // already handled this reply
     const change = parseChangeSet(last.content);
-    setPendingChange(change);
+    if (!change) return;
+    appliedChangeIds.current.add(last.id);
+    applyChangeAuto(last.id, change);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, isAiBusy]);
 
-  const acceptChange = useCallback(async (change: FileChangeSet) => {
+  // Writes a change set to disk, refreshes the tree and reloads open files.
+  const writeChangeToDisk = useCallback(async (change: FileChangeSet): Promise<boolean> => {
     let ok = true;
     for (const edit of change.edits) {
       try {
+        // A trailing slash means the model intended a directory, not a file.
+        // We can't "write content" to a directory, so skip it rather than
+        // accidentally treating a folder as a file.
+        if (edit.path.endsWith('/')) {
+          await api.createDirectory({ path: edit.path.replace(/\/+$/, '') });
+          continue;
+        }
         if (isDeleteEdit(edit)) {
-          // Explicit deletion request.
           const res = await api.deletePath({ path: edit.path });
           if (!isOk(res)) {
             toast(`Failed to delete ${edit.path}: ${res.error}`, 'error');
             ok = false;
             break;
           }
-          // Close the tab and drop cached content.
           setTabs((prev) => prev.filter((t) => t.filePath !== edit.path));
           setFiles((prev) => {
             const next = { ...prev };
@@ -785,23 +802,42 @@ export function CmplxProvider({ children }: { children: React.ReactNode }) {
       }
     }
     if (ok) {
-      setPendingChange(null);
       toast(`Applied ${change.edits.length} change(s) to disk`, 'success');
       await refreshTree();
-      // reload open files for affected paths
       for (const edit of change.edits) {
-        if (edit.content !== '__CMPLX_DELETE_FILE__') {
+        if (!isDeleteEdit(edit)) {
           await reloadFile(edit.path);
         }
       }
-      toast('Editor refreshed to show updated files', 'success');
       return true;
     }
     return false;
-  }, [refreshTree, reloadFile, toast]);
+  }, [refreshTree, reloadFile, toast, setTabs, setFiles]);
+
+  const applyChangeAuto = useCallback(async (messageId: string, change: FileChangeSet) => {
+    // Auto-apply the proposed files without showing any status text; the
+    // assistant's own prose is the only thing rendered for the message.
+    void messageId;
+    setPendingChange(null);
+    setChangeStatus('applying');
+    await writeChangeToDisk(change);
+    setChangeStatus('applied');
+    // Clear the status shortly so it does not linger until the next turn.
+    setTimeout(() => setChangeStatus('idle'), 3000);
+  }, [writeChangeToDisk]);
+
+  const acceptChange = useCallback(async (change: FileChangeSet) => {
+    const ok = await writeChangeToDisk(change);
+    if (ok) {
+      setPendingChange(null);
+      return true;
+    }
+    return false;
+  }, [writeChangeToDisk]);
 
   const rejectChange = useCallback(() => {
     setPendingChange(null);
+    setChangeStatus('idle');
     toast('Changes rejected; nothing was written to disk', 'info');
   }, [toast]);
 
@@ -847,6 +883,7 @@ export function CmplxProvider({ children }: { children: React.ReactNode }) {
         pendingChange,
         acceptChange,
         rejectChange,
+        changeStatus,
         loadSession,
         startNewSession,
         deleteSession,
